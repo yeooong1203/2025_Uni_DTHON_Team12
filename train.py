@@ -34,11 +34,11 @@ def crop_positive(pil_img: Image.Image, bbox: List[float]) -> Image.Image:
         return pil_img.copy()
     return pil_img.crop((x1, y1, x2, y2))
 
-
-def crop_negative(pil_img: Image.Image, pos_bbox: List[float]) -> Image.Image:
+def crop_negative(pil_img: Image.Image, pos_bbox: List[float], min_size=32) -> Image.Image:
     """
-    positive bbox 와 IoU 가 낮은 random crop 을 negative 로 사용.
-    간단한 버전.
+    이미지 전체에서 random crop을 뽑고,
+    positive bbox와 IoU < 0.2 인 crop을 negative 로 사용.
+    실패해도 fallback 있어 에러 없음.
     """
     W, H = pil_img.size
     px, py, pw, ph = pos_bbox
@@ -54,21 +54,24 @@ def crop_negative(pil_img: Image.Image, pos_bbox: List[float]) -> Image.Image:
         area1 = max(0, x2 - x1) * max(0, y2 - y1)
         area2 = max(0, xb2 - xb1) * max(0, yb2 - yb1)
         union = area1 + area2 - inter
-        if union <= 0:
-            return 0.0
-        return inter / union
+        return inter / union if union != 0 else 0.0
 
-    for _ in range(50):  # 최대 50번 시도
-        rw = random.randint(max(10, int(pw / 2)), min(W, int(pw * 2)))
-        rh = random.randint(max(10, int(ph / 2)), min(H, int(ph * 2)))
-        rx = random.randint(0, max(0, W - rw))
-        ry = random.randint(0, max(0, H - rh))
+    for _ in range(30):
+        rw = random.randint(min_size, max(min_size + 1, int(W * 0.5)))
+        rh = random.randint(min_size, max(min_size + 1, int(H * 0.5)))
+
+        if W - rw <= 1 or H - rh <= 1:
+            continue
+
+        rx = random.randint(0, W - rw)
+        ry = random.randint(0, H - rh)
+
         cand = (rx, ry, rx + rw, ry + rh)
         if iou((px1, py1, px2, py2), cand) < 0.2:
             return pil_img.crop(cand)
 
-    # 그래도 못 찾으면 전체 이미지 반환
-    return pil_img.copy()
+    # fallback
+    return pil_img.crop((0, 0, min_size, min_size))
 
 print("start training clip matcher...")
 
@@ -81,8 +84,13 @@ def train_clip_matcher(args):
         shuffle=True,
         num_workers=args.num_workers,
     )
+    # ===== NEW: Limit dataset samples =====
+    if args.max_samples is not None:
+        old_len = len(ds.samples)
+        ds.samples = ds.samples[:args.max_samples]
+        print(f"[INFO] Using only {len(ds.samples)} samples out of {old_len}.")
+    # ======================================
 
-    
 
     matcher = ClipMatcher(clip_name=args.clip_name).to(device)
     optimizer = torch.optim.AdamW(matcher.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -158,6 +166,8 @@ def get_args():
     ap.add_argument("--batch_size", type=int, default=4)
     ap.add_argument("--num_workers", type=int, default=0)
     ap.add_argument("--lr", type=float, default=1e-5)
+    ap.add_argument("--max_samples", type=int, default=None)
+
     return ap.parse_args()
 
 

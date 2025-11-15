@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from preprocessing import build_dataloader
+from preprocess import build_dataloader
 from model import load_clip_matcher, HybridYOLOCLIP
 
 
@@ -68,8 +68,10 @@ def run_eval(args):
     os.makedirs(os.path.dirname(args.out_csv), exist_ok=True)
     rows = []
     ious = []
+    total = len(ds)
+    processed = 0
 
-    for batch in dl:
+    for batch_idx, batch in enumerate(dl):
         # batch 는 sample dict 의 리스트
         for sample in batch:
             img_path = sample["img_path"]
@@ -93,7 +95,7 @@ def run_eval(args):
                     "pred_h": pred_h,
                 }
             )
-
+            iou = None
             if gt_bbox is not None:
                 gx, gy, gw, gh = [float(v) for v in gt_bbox]
                 iou = iou_xywh_pixel(
@@ -101,7 +103,13 @@ def run_eval(args):
                     [gx, gy, gw, gh],
                 )
                 ious.append(iou)
-
+            processed += 1
+            print(
+                f"[Eval] {processed}/{total} | "
+                f"qid={qid} | "
+                f"pred=({pred_x:.1f},{pred_y:.1f},{pred_w:.1f},{pred_h:.1f})"
+                + (f" | IoU={iou:.3f}" if iou is not None else "")
+            )
     df = pd.DataFrame(
         rows, columns=["query_id", "query_text", "pred_x", "pred_y", "pred_w", "pred_h"]
     )

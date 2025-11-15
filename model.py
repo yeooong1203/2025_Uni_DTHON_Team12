@@ -32,7 +32,7 @@ class ClipMatcher(nn.Module):
         (각 i-th text 와 i-th image 의 유사도 점수)
         """
         inputs = self.processor(
-            text=texts, images=pil_images, return_tensors="pt", padding=True, truncation = True, max_length=77
+            text=texts, images=pil_images, return_tensors="pt", padding="max_length", truncation = True, max_length=77
         ).to(device)
         outputs = self.clip_model(**inputs)
         # logits_per_image: (batch_size, batch_size)
@@ -69,7 +69,7 @@ class ClipMatcher(nn.Module):
         """
         self.eval()
         inputs = self.processor(
-            text=[text], images=[pil_image], return_tensors="pt", padding=True, truncate=True, max_length=77
+            text=[text], images=[pil_image], return_tensors="pt", padding="max_length", truncation=True, max_length=77
         ).to(device)
         outputs = self.clip_model(**inputs)
         logits = outputs.logits_per_image  # (1,1)
