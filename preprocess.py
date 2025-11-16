@@ -35,6 +35,37 @@ def is_visual_ann(a: dict) -> bool:
     )
     return has_q and looks_visual
 
+def normalize_class_name(raw: str) -> str:
+    raw = (raw or "").strip()
+
+    if "표" in raw:
+        return "표"
+    if "혼합" in raw or "혼합형" in raw:
+        return "혼합형 차트"
+    if "세로" in raw:
+        return "세로 막대 차트"
+    if "가로" in raw:
+        return "가로 막대 차트"
+    if "차트" in raw or "그래프" in raw:
+        return "차트"
+    return raw or "시각요소"
+
+def build_query_text(visual_instruction: str, class_name: str) -> str:
+    """
+    visual_instruction + class_name을 묶어서
+    CLIP에 넣을 최종 query 문장을 생성.
+    """
+    instr = (visual_instruction or "").strip()
+    cname_norm = normalize_class_name(class_name)
+
+    if instr:
+        # 예: "혼합형 차트에 대한 질의: 제목에 따라 실질가계소득 및 민간소비 혼합형 차트에 대해 알려주세요"
+        return f"{cname_norm}에 대한 질의: {instr}"
+    else:
+        # visual_instruction이 비어있는 경우 fallback
+        return f"{cname_norm} 시각요소에 대해 알려주세요."
+
+
 
 class UniDQueryDataset(Dataset):
     """
@@ -74,9 +105,14 @@ class UniDQueryDataset(Dataset):
             for a in ann_list:
                 if not is_visual_ann(a):
                     continue
+
                 bbox = a.get("bounding_box", None)
-                qtxt = str(a.get("visual_instruction", "")).strip()
+                vinst = str(a.get("visual_instruction", "")).strip()
                 qid = a.get("instance_id", "")
+                class_name = a.get("class_name","")
+                
+                qtxt = build_query_text(vinst, class_name)
+                
                 self.samples.append(
                     {
                         "img_path": img_path,
@@ -84,6 +120,7 @@ class UniDQueryDataset(Dataset):
                         "bbox": bbox,  # [x, y, w, h] or None
                         "query_id": qid,
                         "orig_size": (W, H),
+                        "class_name": class_name,
                     }
                 )
 
